@@ -1,0 +1,32 @@
+{
+  "name": "excel-js",
+  "version": "0.0.1",
+  "homepage": "http://lemons.io/excel-js",
+  "authors": [
+    "Sebastian Gerstenlauer <gerstenlauer@gmx.net>"
+  ],
+  "description": "Create Excel files straight from HTML or JSON with JavaScript",
+  "main": "dist/exceljs.dist.js",
+  "moduleType": [
+    "globals",
+    "node"
+  ],
+  "keywords": [
+    "excel",
+    "javascript",
+    "xlsx",
+    "spreadsheet"
+  ],
+  "license": "Apache-2.0",
+  "ignore": [
+    "**/.*",
+    "node_modules",
+    "bower_components",
+    "test",
+    "tests"
+  ],
+  "dependencies": {
+    "lodash": "~4.11.1",
+    "jszip": "~3.0.0"
+  }
+}

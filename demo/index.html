@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>excelJS - Examples</title>
+
+        <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/jquery/1.8.0/jquery.min.js"></script>
+        <script type="text/javascript" src="../dist/exceljs.compiled.min.js"></script>
+
+        <style type="text/css">
+		.changed{
+			color: #ff0000;
+			background-color: #ffff00;
+		}
+		</style>
+    </head>
+<body>
+
+<pre id="preview"><a href="#" id="downloader">Download Excel!</a></pre>
+
+<script type="text/javascript">
+
+		$(document).ready(function (data) {
+
+            //$("#downloader").excelDownload('filename.xslx', $('#myTable'));
+
+		    $("#downloader").click(function(){
+                ExcelJS.createHtmlTableExcelFile('#myTable', 'excel-js-demo-export.xlsx');
+
+			});
+		});
+        </script>
+
+<table id="myTable">
+    <tr><td>A1</td><td>B1</td><td>C1</td><td>D1</td></tr>
+    <tr><td>A2</td><td class="changed">B2</td><td>C2</td><td>D2</td></tr>
+    <tr><td>A3</td><td>B3</td><td>C3</td><td>D3</td></tr>
+</table>
+
+</body>
+</html>
