@@ -4,7 +4,8 @@ excelJS is a JavaScript framework for generating Excel *.xlsx files straight fro
 
 Getting Started
 ------
-1. Download file *exceljs.compiled.min.js* from *dist* directory
+1. Download file *exceljs.compiled.min.js* from *dist* directory:
+   [Download exceljs.compiled.min.js] (https://raw.githubusercontent.com/lemons-io/exceljs/master/dist/exceljs.compiled.min.js)
 
 2. Add the following javascript include tags to your html file:
     ```html
