@@ -14537,6 +14537,7 @@ try {
 },{"./Excel/Drawing/index":51,"./Excel/Drawings":52,"./Excel/Pane":53,"./Excel/Paths":54,"./Excel/Positioning":55,"./Excel/RelationshipManager":56,"./Excel/SharedStrings":57,"./Excel/SheetProtection":58,"./Excel/SheetView":59,"./Excel/StyleSheet":60,"./Excel/Table":61,"./Excel/Workbook":62,"./Excel/Worksheet":63,"./Excel/WorksheetExportWorker":64,"./Excel/XMLDOM":65,"./Excel/ZipWorker":66,"./Excel/util":67,"./Template":69,"./excel-builder":70,"lodash":"lodash"}],72:[function(require,module,exports){
 var _ = require('lodash');
 
+
 if (!String.prototype.endsWith) {
   String.prototype.endsWith = function(searchString, position) {
       var subjectString = this.toString();
@@ -14547,6 +14548,18 @@ if (!String.prototype.endsWith) {
       var lastIndex = subjectString.indexOf(searchString, position);
       return lastIndex !== -1 && lastIndex === position;
   };
+}
+if (!String.prototype.hashCode) {
+    String.prototype.hashCode = function() {
+        var hash = 0, i, chr, len;
+        if (this.length === 0) return hash;
+        for (i = 0, len = this.length; i < len; i++) {
+            chr   = this.charCodeAt(i);
+            hash  = ((hash << 5) - hash) + chr;
+            hash |= 0; // Convert to 32bit integer
+        }
+        return hash;
+    };
 }
 
 var HtmlToExcelBuilder = function(){
@@ -14631,86 +14644,235 @@ var HtmlToExcelBuilder = function(){
             return null;
         };
 
-        //		var exportCssStyles = ['background-color', 'color', 'font-size'];
-        var exportCssStyles = ['background-color', 'color'];
-
         var fillTemplate = { type: 'pattern',
                         patternType: 'solid'};
 
-        var cssMappings = {'background-color' : {stylePart : 'fill', styleProperty : 'fgColor', converter: convertColor, template: fillTemplate},
+        var borderTemplate = {top : { style: 'thin' }, right : { style: 'thin' }, bottom : { style: 'thin' }, left : { style: 'thin' }};
+
+        var cssMappings = {
+            'background-color' : {stylePart : 'fill', styleProperty : 'fgColor', converter: convertColor, template: fillTemplate},
             'color' : {stylePart : 'font', styleProperty : 'color', converter: convertColor},
             'font-size' : {stylePart : 'font', styleProperty : 'size', converter: convertFontSize},
+            'border-top-color' : {stylePart : 'border', styleProperty : 'top.color', converter: convertColor, template: borderTemplate},
+            'border-right-color' : {stylePart : 'border', styleProperty : 'right.color', converter: convertColor, template: borderTemplate},
+            'border-bottom-color' : {stylePart : 'border', styleProperty : 'bottom.color', converter: convertColor, template: borderTemplate},
+            'border-left-color' : {stylePart : 'border', styleProperty : 'left.color', converter: convertColor, template: borderTemplate}
         };
-
-        var fontStyles = ['color', 'font-size'];
-
-        var fontTemplate = {
-                            color: '000000',
-                            size: 11
-                        };
-
-        var extractTableData = function(el, sheet){
-            var trElements = $(el).find("tr");
-            var rows = [];
-            $.each(trElements, function(index, trEl){
-
-                var line = [];
-                var tdElements = $(trEl).find("td");
-                $.each(tdElements, function(index, tdEl){
-                    var cellValue = $(tdEl).text();
-
-                    var style = {};
-
-                    for(var key in exportCssStyles){
-                        var cssProperty = exportCssStyles[key];
-                        var cssValue = $(tdEl).css(cssProperty);
-                        var cssMapping = cssMappings[cssProperty];
-                        var value = cssMapping.converter(cssValue);
-                        if(value){
-                            if(!style[cssMapping.stylePart]){
-                                if(cssMapping.template){
-                                    style[cssMapping.stylePart] = JSON.parse(JSON.stringify(cssMapping.template));
-                                }else{
-                                    style[cssMapping.stylePart] = {};
-                                }
-                            }
-                            style[cssMapping.stylePart][cssMapping.styleProperty] = value;
-                        }
-                    }
-
-                    if( !jQuery.isEmptyObject(style) ){
-                        var sheetStyle = sheet.createFormat(style);
-                        cellValue = {value: cellValue, metadata: {style: sheetStyle.id}};
-                    }
-                    line.push(cellValue);
-                });
-                rows.push(line);
-            });
-
-            return rows;
-        };
-
 
         var creationContexts = [];
         var defaultCreationContext = {
-                fileName: "excelJS-export.xlsx",
+                sheetName: null,
                 rowSelector: 'tr',
                 columnSelector: 'td',
-                style: {}
+                autoSizeColumns: true,
+                maxColumnWidth: 40,
+                minColumnWidth: 8,
+                style: {},
+                includeCssProperties: ['background-color', 'color',  'border-top-color', 'border-right-color', 'border-bottom-color', 'border-left-color']
+        } ;
+
+        var defaultCssStyle = {
+                            'color': '#000000',
+                            'font-size': 11
+                        };
+
+        var calculateExcelColumnChar = function( rowIndex, colIndex ){
+
+            var nextValue = colIndex + 1;
+            var excelColumnString = '';
+
+            while(nextValue > 0){
+                var nextOffset = (nextValue - 1) % 26;
+                var nextCharCode = Number('A'.charCodeAt(0)) + Number(nextOffset);
+                excelColumnString = String.fromCharCode(nextCharCode) + excelColumnString;
+                nextValue = Math.floor((nextValue -  nextOffset) / 26);
+            }
+            var excelRowIndex = rowIndex + 1;
+
+            return excelColumnString + '' + excelRowIndex;
+
         };
+        var calculateMaxCharacterWidthPerColumn = function(cells){
+            var maxCharactersPerColumn = [];
+            for(var i = 0; i < cells.length; i++){
+                for(var j = 0; j < cells[i].length; j++){
+                    var cellValue = cells[i][j];
+                    if(typeof cellValue !== 'string'){
+                        cellValue = cellValue.value;
+                    }
+                    var cellLines = cellValue.split(/\r?\n/);
+                    for(var key in  cellLines){
+                        var lineValue = cellLines[key].trim();
+                        if((typeof maxCharactersPerColumn[j] === 'undefined') || maxCharactersPerColumn[j] < lineValue.length){
+                            maxCharactersPerColumn[j] = lineValue.length;
+                        }
+                    }
+                }
+            }
+            return maxCharactersPerColumn;
+        };
+
+        var calculateStyleHashCode = function(style){
+
+            var strVal = '';
+            for(var stylePartKey in style){
+                var stylePartArr = style[stylePartKey];
+                for(var stylePropertyKey in stylePartArr){
+                    strVal += stylePartKey+":"+stylePropertyKey+"="+stylePartArr[stylePropertyKey]+";";
+                 }
+            }
+            return strVal.hashCode();
+        };
+
+        var convertCellStyle = function(tdEl, creationContext, styleSheet, styles){
+            var style = {};
+
+            for(var key in creationContext.includeCssProperties){
+                var cssProperty = creationContext.includeCssProperties[key];
+                var cssValue = $(tdEl).css(cssProperty);
+
+                var cssMapping = cssMappings[cssProperty];
+                var value = cssMapping.converter(cssValue);
+
+                if(value){
+                    if(!style[cssMapping.stylePart]){
+                        if(cssMapping.template){
+                            style[cssMapping.stylePart] = JSON.parse(JSON.stringify(cssMapping.template));
+                        }else{
+                            style[cssMapping.stylePart] = {};
+                        }
+                    }
+                    var stylePropertyChain = cssMapping.styleProperty.split('.');
+                    var styleObjectParent = style[cssMapping.stylePart];
+                    for(var i = 0; i < stylePropertyChain.length; i++){
+                        if(i === (stylePropertyChain.length - 1)){
+                            styleObjectParent[stylePropertyChain[i]] = value;
+                        }else{
+                            if(typeof style[cssMapping.stylePart] === 'undefined') {
+                               styleObjectParent[stylePropertyChain[i]] = {};
+                            }
+                            styleObjectParent = styleObjectParent[stylePropertyChain[i]];
+                        }
+                    }
+                }
+            }
+            var sheetStyle;
+            if( !jQuery.isEmptyObject(style) ){
+                var styleHash = calculateStyleHashCode(style);
+                if(typeof styles[styleHash] !== 'undefined'){
+                    sheetStyle = styles[styleHash];
+                }else{
+                    sheetStyle = styleSheet.createFormat(style);
+                    styles[styleHash] = sheetStyle;
+                }
+            }
+            return sheetStyle;
+        };
+
+        var createCell = function(cellValue, sheetStyle){
+            return {value: cellValue, metadata: {style: sheetStyle.id}};
+        };
+
+        var extractTableData = function(el, workSheet, styleSheet, creationContext){
+            var id = "excel-js-export-tmp-table-ikj3usd0bg3ukujd5s";
+            $("body").append("<div id="+id+" style='visibility: hidden;'></div>");
+            $('#'+id).append(el);
+
+            var trElements = $(el).find(creationContext.rowSelector);
+            var cells = [];
+            var styles = [];
+            $.each(trElements, function(rowIndex, trEl){
+
+                var tdElements = $(trEl).find(creationContext.columnSelector);
+
+                cells[rowIndex] = [];
+                var offsetColIndex = -1;
+                console.log("reading rowIndex "+rowIndex);
+                $.each(tdElements, function(colIndex, tdEl){
+                    offsetColIndex++;
+                    while(typeof cells[rowIndex][offsetColIndex] !== 'undefined'){ //already set by previous colspan cells detection
+                        offsetColIndex++;
+                    }
+                    console.log("reading colIndex "+rowIndex);
+                    var cellValue = $(tdEl).text();
+
+                    var colspan = $(tdEl).attr("colspan");
+                    colspan = colspan ? colspan : 1;
+
+                    var rowspan = $(tdEl).attr("rowspan");
+                    rowspan = rowspan ? rowspan : 1;
+
+                    var sheetStyle = convertCellStyle(tdEl, creationContext, styleSheet, styles);
+
+                    if(colspan > 1 || rowspan > 1){
+
+                        var startCellId = calculateExcelColumnChar(rowIndex, offsetColIndex);
+
+                        var endColIndex = Number(offsetColIndex) + Number(colspan) - 1;
+                        var endRowIndex = Number(rowIndex) + Number(rowspan) - 1;
+                        var endCellId = calculateExcelColumnChar(endRowIndex, endColIndex);
+                        workSheet.mergeCells(startCellId, endCellId);
+
+                        //init empty cell values for rowspan/colspan cells
+
+                        for(var i = rowIndex; i <= endRowIndex; i++){
+                            for(var j = offsetColIndex; j <= endColIndex; j++){
+                                if(!(i === rowIndex && j === offsetColIndex)){
+                                    cells[i][j] = createCell('', sheetStyle);
+                                }
+                            }
+                        }
+                    }
+
+                    cellValue = createCell(cellValue, sheetStyle);
+                    cells[rowIndex][offsetColIndex] = cellValue;
+                });
+
+            });
+            $('#'+id).remove();
+            return cells;
+        };
+
+        var autosizeColumns = function(cells, worksheet, creationContext){
+            if(creationContext.autoSizeColumns){
+                var maxCharactersPerColumn = calculateMaxCharacterWidthPerColumn(cells);
+                var columnWidthStyles = [];
+                for(var key in maxCharactersPerColumn){
+
+                    var columnWidth = maxCharactersPerColumn[key];
+                    if(typeof creationContext.minColumnWidth !== 'undefined'){
+                        columnWidth = Math.max(columnWidth, creationContext.minColumnWidth);
+                    }
+                    if(typeof creationContext.maxColumnWidth !== 'undefined'){
+                        columnWidth = Math.min(columnWidth, creationContext.maxColumnWidth);
+                    }
+                    columnWidthStyles.push({ width: columnWidth });
+                }
+                worksheet.setColumns(columnWidthStyles);
+            }
+        };
+
+
+
 
         this.addCreationContext = function(creationContext){
             creationContexts.push(creationContext);
+        };
+
+        this.addCreationContexts = function(creationContextsParam){
+            for(var key in creationContextsParam){
+                creationContexts.push(creationContextsParam[key]);
+            }
         };
 
         var createExcelSheet = function(workbook, creationContext, index){
             var sheetName = creationContext.sheetName ?  creationContext.sheetName :  'Table '+index;
             var worksheet = workbook.createWorksheet({ name: sheetName });
             var stylesheet = workbook.getStyleSheet();
-            var rootEl = creationContext.tableRoot ? creationContext.tableRoot : $(creationContext.rootSelector);
-            var tableData = extractTableData(rootEl, stylesheet);
+            var tableCellData = extractTableData(creationContext.tableRoot, worksheet, stylesheet, creationContext);
             worksheet.sheetView.showGridLines = true;
-            worksheet.setData(tableData);
+            worksheet.setData(tableCellData);
+            autosizeColumns(tableCellData, worksheet, creationContext);
             workbook.addWorksheet(worksheet);
 
             return worksheet;
@@ -14721,7 +14883,6 @@ var HtmlToExcelBuilder = function(){
         */
         this.createExcelFile = function(outputFileName){
             var workbook = ExcelBuilder.Builder.createWorkbook();
-
             $.each(creationContexts, function( index, creationContext ) {
                 var mergedContext = $.extend(true, {}, defaultCreationContext, creationContext);
                 createExcelSheet(workbook, mergedContext, index);
@@ -14736,18 +14897,29 @@ var HtmlToExcelBuilder = function(){
 
 var ExcelJS = {
 
-    createHtmlTableExcelFile : function(tableRootSelector, outputFileName){
-            var creationContext = {
-                fileName: outputFileName,
-                rootSelector: tableRootSelector,
+    createExcelFile : function(creationContexts, outputFileName){
+        var excelBuilder = new HtmlToExcelBuilder();
+        excelBuilder.addCreationContexts(creationContexts);
+        return excelBuilder.createExcelFile(outputFileName);
+    },
+
+    createHtmlTableExcelFile : function ( tableRootSelector, outputFileName ) {
+        var creationContext;
+        if(typeof tableRootSelector === 'string'){
+            creationContext = {
                 tableRoot: $(tableRootSelector)
             };
-            creationContexts = [];
-            var excelBuilder = new HtmlToExcelBuilder();
-            excelBuilder.addCreationContext(creationContext);
-            return excelBuilder.createExcelFile(outputFileName);
+        }else{
+            creationContext = {
+                tableRoot: tableRootSelector
+            };
         }
+        var excelBuilder = new HtmlToExcelBuilder();
+        excelBuilder.addCreationContext(creationContext);
+        return excelBuilder.createExcelFile(outputFileName);
+    }
 };
+
 
 try {
     if(typeof window !== 'undefined') {
